@@ -20,9 +20,10 @@ Identify smart device usage patterns to help Bellabeat:
 - GitHub
 
 ## Files
-- `Bellabeat.Rmd`: Full R Markdown source code and narrative
-- `index.html`: Rendered HTML report (auto-published on GitHub Pages)
-- [View the Report online](https://mehran-ho.github.io/Bellabeat---R-Markdown/)
+- `Bellabeat.Rmd`: Full R Markdown source code and narrative  
+- `index.html`: Rendered HTML report (auto-published on GitHub Pages)  
+- 🔗 [View the Report online](https://mehran-ho.github.io/Bellabeat---R-Markdown/) – Hosted on GitHub Pages  
+- 🔗 [View a related Report on Kaggle](https://www.kaggle.com/code/raanhojati/bellabeat-case-using-bigquery-and-tableau) – Published notebook with visuals and narrative
 
 ## Results Summary
 - Users wore their devices consistently throughout the week
