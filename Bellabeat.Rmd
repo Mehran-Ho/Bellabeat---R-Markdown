@@ -1,0 +1,566 @@
+---
+title: "Bellabeat case study using R"
+author: "Mehran Hojati"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = "C:/Users/mhoja/Downloads/Bellabeat2")
+```
+
+
+## Introduction
+This report is part of the capstone project for the Google Data Analytics Certificate. The analysis is conducted using the R programming language within RStudio Desktop.
+
+## Scenario
+I am a junior data analyst working in the marketing team of Bellabeat, a high-tech company that manufactures health-focused smart products for women. Bellabeat’s co-founder and Chief Creative Officer, Urška Sršen, believes that analyzing smart device usage data could uncover valuable growth opportunities. She is particularly interested in understanding how consumers use non-Bellabeat smart devices, such as fitness trackers, to inform Bellabeat’s product and marketing strategies. 
+
+## Ask
+I have been tasked with analyzing publicly available Fitbit Fitness Tracker Data to better understand how consumers engage with their smart devices. The objective is to identify usage trends and behavioral patterns that can guide Bellabeat’s future marketing strategy, enhance product development, and improve alignment with user lifestyles.
+
+This analysis will explore:
+  - Daily and hourly activity patterns
+  - Consistency of device usage over time
+  - Engagement with features such as step tracking and sleep monitoring
+
+The final deliverable will be a data-driven report and presentation to the Bellabeat executive team, including strategic recommendations.
+
+According to the project brief, my analysis will be guided by the following key questions:
+  - What are some trends in smart device usage?
+  - How could these trends apply to Bellabeat customers?
+  - How could these trends help influence Bellabeat’s marketing strategy?
+
+## Prepare
+
+This project uses publicly available **Fitbit Fitness Tracker Data** <https://www.kaggle.com/datasets/arashnic/fitbit>, which contains anonymized fitness data collected from **34 users** over a **31-day period (March 12 to April 12, 2016)**. The dataset includes records on daily and hourly activity, sleep, calories burned, steps taken, and heart rate.
+
+All .CSV files were downloaded from Kaggle and loaded into RStudio. The working directory was confirmed using getwd().
+
+
+### Code: Install and Load Required Packages
+```{r}
+library(tidyr)
+library(dplyr)
+library(lubridate)
+library(readr)
+library(ggplot2)
+library(ggrepel)
+```
+Note: If any packages were not yet installed, the install.packages() function was used before loading them.
+
+### Load Data Files into RStudio
+Although this analysis focuses on step tracking and sleep monitoring, all Fitbit data files were initially loaded. Some datasets (e.g., calories, METs, and heart rate) were later excluded from the analysis because they lacked data and were not valuable to answer the business question. 
+
+### Code:  read data files to RStudio
+```{r}
+minute_steps <- read.csv("minuteStepsNarrow_merged.csv")
+minute_calories <- read.csv("minuteCaloriesNarrow_merged.csv")
+minute_intensities <- read.csv("minuteIntensitiesNarrow_merged.csv")
+minute_mets <- read.csv("minuteMETsNarrow_merged.csv")
+minute_sleep <- read.csv("minuteSleep_merged.csv")
+daily_activity <- read.csv("dailyActivity_merged.csv")
+hourly_calories <- read.csv("hourlyCalories_merged.csv")
+hourly_intensities <- read.csv("hourlyIntensities_merged.csv")
+hourly_steps <- read.csv("hourlySteps_merged.csv")
+heartrate_seconds <- read.csv("heartrate_seconds_merged.csv")
+weight_log <- read.csv("weightLogInfo_merged.csv")
+```
+
+## Process
+Clean and Prepare data for analysis.
+
+All 11 data files provided in the Fitbit dataset on Kaggle were loaded into RStudio for initial inspection.  Note: The Kaggle page seems to reference additional data files that are no longer available for download.
+
+- **Minute-level data**  
+  - `minuteStepsNarrow_merged.csv`  
+  - `minuteCaloriesNarrow_merged.csv`  
+  - `minuteIntensitiesNarrow_merged.csv`  
+  - `minuteMETsNarrow_merged.csv`  
+  - `minuteSleep_merged.csv`
+
+- **Hourly-level data**  
+  - `hourlySteps_merged.csv`  
+  - `hourlyCalories_merged.csv`  
+  - `hourlyIntensities_merged.csv`
+
+- **Daily summary data**  
+  - `dailyActivity_merged.csv`
+
+- **Other files**  
+  - `heartrate_seconds_merged.csv`  
+  - `weightLogInfo_merged.csv`
+
+The following are my comments about these files, grouped by categories: 
+
+- **Step tracking**  
+  Step data was available for all users at both minute and hourly levels. Since hourly data provides sufficient detail to assess usage patterns across time, minute-level step data was not used. Hourly steps were used to analyze user behavior and engagement with the Fitbit.
+
+- **Intensity tracking**  
+  While intensity data captures light, moderate, and vigorous activity levels, it was highly correlated with step data and added little additional insight. For simplicity and clarity, intensity data was excluded from visualizations.
+  
+- **Sleep tracking**  
+  Minute-level sleep data was available only for a subset of users and not consistently across days. However, it was retained and used to explore engagement with sleep-tracking features.
+
+- **Calory and MET tracking**
+  Both metrics are model-driven outputs based on user movement, not direct interactions with the Fitbit. They were excluded because they do not reflect how users actively used the device.
+
+- **Daily summary data**
+  The dailyActivity_merged.csv file appeared to be truncated, with most users having data only for April. Due to this inconsistency, this file was not used.  
+
+- **Weight tracking**  
+  Only 8 users had any weight entries, and even those were sparse. This file was excluded due to insufficient data for trend analysis.
+
+- **Heart rate tracking**  
+  Although potentially useful, heart rate data was incomplete and unevenly distributed, with only 14 users represented. It was excluded for lack of broad user coverage.
+  
+### Final Datasets Used for Analysis
+The following two files were found to be the most complete and reflective of how users interacted with their Fitbit devices:
+
+- hourlySteps_merged.csv – for analyzing step activity across time
+- minuteSleep_merged.csv – for examining user engagement with sleep tracking
+
+
+### hourly_steps
+```{r}
+# View structure and inspect for missing values
+str(hourly_steps)
+colSums(is.na(hourly_steps))
+head(hourly_steps)
+```
+
+```{r}
+# Check for duplicate records by user and timestamp
+sum(duplicated(hourly_steps[, c("Id", "ActivityHour")]))
+```
+
+```{r}
+# Convert ActivityHour from string to POSIXct format for date-time handling
+hourly_steps$ActivityHour <- parse_date_time(hourly_steps$ActivityHour, orders = "mdy IMS p")
+```
+
+```{r}
+# Extract useful time-based components
+hourly_steps <- hourly_steps %>%
+  mutate(
+    date = as.Date(ActivityHour),          # Just the date (YYYY-MM-DD)
+    hour = as.numeric(hour(ActivityHour)),             # Extract hour (0–23)
+    day_of_week = weekdays(ActivityHour)   # Extract weekday name (e.g., "Monday")
+  )
+```
+
+### minute_sleep
+```{r}
+# Examine structure and check for missing values
+str(minute_sleep)
+colSums(is.na(minute_sleep))
+head(minute_sleep)
+```
+
+```{r}
+minute_sleep <- minute_sleep %>%
+  mutate(
+    # Parse the original date-time string into a POSIXct datetime object.
+    # Using tz = "UTC" avoids issues with daylight saving time gaps.
+    datetime = mdy_hms(date, tz = "UTC"))
+```
+
+### 📌 Note on DST Handling
+
+The `date` column includes local timestamps from the U.S. daylight saving time (DST) transition on **March 13, 2016**.  
+To avoid issues with nonexistent local times (e.g., `2:30 AM`, which is skipped during the “spring forward” shift), we parsed these timestamps using **UTC**.
+
+```{r}
+# Step 1: Count duplicates based on key identifying columns
+sum(duplicated(minute_sleep[, c("Id", "logId", "datetime")]))
+
+# Step 2: Remove duplicates while keeping only the first occurrence
+minute_sleep <- minute_sleep %>%
+  distinct(Id, logId, datetime, value, .keep_all = TRUE)
+```
+## Analyze
+
+### Step Analysis
+
+**1. Daily Step Pattern**
+
+```{r}
+# Summarize average steps per day of the week
+daily_step_distribution <- hourly_steps %>%
+  group_by(day_of_week) %>%
+  summarise(avg_steps = mean(StepTotal), .groups = "drop")
+
+# Set factor levels to order the days (Monday to Sunday or Sunday to Saturday)
+daily_step_distribution$day_of_week <- factor(
+  daily_step_distribution$day_of_week,
+  levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+)
+
+# Plot average step count by weekday
+ggplot(daily_step_distribution, aes(x = day_of_week, y = avg_steps)) +
+  geom_col(fill = "steelblue") +
+  labs(
+    title = "Average Step Count by Day of Week",
+    x = "Day of Week",
+    y = "Average Steps"
+  ) +
+  theme_minimal()
+```
+      
+      
+Users maintained consistent Fitbit usage throughout the week, with only minor fluctuations in average step count by day. This indicates steady engagement across weekdays and weekends, suggesting that most users wore their devices regularly as part of their daily routines. 
+
+**2. Hourly Step Pattern (All Days)**
+
+```{r}
+hourly_step_distribution <- hourly_steps %>%
+  group_by(hour) %>%                    # Group by hour of the day
+  summarise(avg_steps = mean(StepTotal), .groups = "drop")  # Compute average
+
+# Plot: Average hourly steps (aggregated over all days)
+ggplot(hourly_step_distribution, aes(x = hour, y = avg_steps)) +
+  geom_col(fill = "steelblue") +        # Bar chart for each hour
+  labs(title = "Average Step Count by Hour of Day",
+       x = "Hour of Day", y = "Average Steps") +
+  theme_minimal()
+
+```
+   
+   
+The hourly step data reveals that most users walked primarily during the daytime between 8 AM and 8 PM. Distinct step patterns—such as sharp morning and evening peaks—suggest habitual routines like commuting, work breaks, or exercise. Some users show sparse or concentrated usage, possibly indicating the device was worn only during workouts or specific activities.
+
+
+**3. Hourly Step Pattern by Day of Week**
+
+```{r}
+hourly_steps_pattern <- hourly_steps %>%
+  group_by(day_of_week, hour) %>%               # Group by day and hour
+  summarise(avg_steps = mean(StepTotal),        # Calculate average steps
+            .groups = "drop")
+
+# Plot: Hourly step pattern for each day of the week
+ggplot(hourly_steps_pattern, aes(x = hour, y = avg_steps)) +
+  geom_col(fill = "steelblue") +                # Use bars to show average steps
+  facet_wrap(~ day_of_week, ncol = 2) +         # Separate chart for each weekday
+  labs(title = "Average Step Count by Hour and Day of Week",
+       x = "Hour of Day", y = "Average Steps") +
+  theme_minimal()
+```
+   
+   
+Users' walk pattern differ slightly from week end to weekdays. During week days, many users show routine activity patterns (e.g., morning/evening peaks), aligned with daily habits like commuting or workouts.
+
+**4. User-level Hourly Averages**
+
+```{r}
+# Count unique active days per user
+user_day_counts <- hourly_steps %>%
+  group_by(Id) %>%
+  summarise(n_days = n_distinct(date), .groups = "drop")
+
+# Compute average hourly steps per user, and attach number of active days
+hourly_avg_steps <- hourly_steps %>%
+  group_by(Id, hour) %>%
+  summarise(avg_steps = mean(StepTotal), .groups = "drop") %>%
+  left_join(user_day_counts, by = "Id")  # Add active day counts
+
+# Create custom labels for each user panel: "user_id\nn=days"
+user_labels <- setNames(paste0(user_day_counts$Id, "\nn=", user_day_counts$n_days),
+                        user_day_counts$Id)
+
+# Plot: Average hourly steps per user with red line at 250 step threshold
+ggplot(hourly_avg_steps, aes(x = hour, y = avg_steps)) +
+  geom_point(color = "blue", size = 0.5) +
+  geom_line(color = "darkgreen") +
+  geom_hline(yintercept = 250, color = "red", linetype = "dashed") +
+  facet_wrap(~Id, scales = "fixed", labeller = labeller(Id = user_labels)) +
+  labs(
+    title = "Hourly Average Steps by User Across All Days",
+    subtitle = "Red dashed line shows 250 steps threshold",
+    x = "Hour of Day", y = "Average Steps"
+  ) +
+  theme_minimal() +
+  coord_cartesian(ylim = c(0, 2000))  # Let y-scale grow as needed
+
+```
+
+Users exhibit diverse activity patterns, with wide variation in hourly step counts.
+While some users consistently exceed the 250-step/hour threshold during active periods (e.g., mornings or afternoons), others remain well below it throughout the day. This suggests differences in lifestyle, routines, and possibly Fitbit usage commitment, highlighting the value of personalized recommendations or interventions.
+
+### Sleep Analysis
+
+**5.  Sleep durations**
+
+```{r}
+# Calculate sleep duration (in hours) for each sleep log
+sleep_durations <- minute_sleep %>%
+  group_by(logId) %>%
+  summarise(
+    start_time = min(datetime),
+    end_time = max(datetime),
+    duration_hours = as.numeric(difftime(end_time, start_time, units = "hours")),
+    .groups = "drop"
+  )
+
+# Plot histogram
+ggplot(sleep_durations, aes(x = duration_hours)) +
+  geom_histogram(binwidth = 0.5, fill = "steelblue", color = "white") +
+  scale_x_continuous(
+    breaks = seq(0, 16, by = 1),   # Add tick marks every 1 hour up to 16
+    minor_breaks = seq(0, 16, by = 0.5)  # Optional: minor ticks at every 0.5
+  ) +
+  labs(
+    title = "Distribution of Sleep Session Durations",
+    subtitle = "Each sleep log session across all users",
+    x = "Sleep Duration (hours)",
+    y = "Number of Sessions"
+  ) +
+  theme_minimal()
+
+```
+
+
+The histogram shows the distribution of sleep session durations across all users. Most sessions fall between 6 to 9 hours, with a peak around 7–8 hours, consistent with typical adult sleep patterns. Shorter sessions (1–4 hours) are also common, and a few longer outliers exceed 10 hours. This distribution highlights a realistic mix of full-night sleeps and shorter naps.
+
+
+**6. Sleep pattern**
+
+```{r}
+
+# calculate hours since sleep start
+minute_sleep <- minute_sleep %>%
+  group_by(logId) %>%
+  arrange(datetime) %>%
+  mutate(
+    minutes_since_start = as.numeric(difftime(datetime, min(datetime), units = "mins")),
+  ) %>%
+  ungroup()
+
+# Recalculate average sleep intensity by time since sleep start (quarter-hour buckets)
+avg_intensity <- minute_sleep %>%
+  group_by(minutes_since_start_partitioned = floor(minutes_since_start /15)) %>%
+  summarise(avg_value = mean(value, na.rm = TRUE), .groups = "drop")
+
+# Plot average intensity
+ggplot(avg_intensity, aes(x = minutes_since_start_partitioned/4, y = avg_value)) +
+  geom_line(color = "purple") +
+  labs(
+    title = "Average Sleep Intensity by Time Since Sleep Start",
+    x = "Hours Since Sleep Start",
+    y = "Average Sleep Intensity"
+  ) +
+ # scale_y_continuous(breaks = seq(1, 1.7, by = 0.1)) +
+  scale_y_continuous(limits = c(0, 2)) +
+  theme_minimal()
+```
+   
+The average sleep intensity curve reveals a typical sleep pattern. Intensity drops sharply at the start, reflecting the transition into deeper sleep stages. This is followed by a stable mid-sleep plateau, then a gradual rise near the end, often associated with lighter sleep or restlessness before waking. The pattern aligns with expected physiological rhythms and supports the reliability of Fitbit's sleep-tracking data when the device is consistently worn.
+
+
+**7. average sleep duration per user**
+
+```{r}
+# Step 1: Summarize sleep sessions per user
+session_sleep <- minute_sleep %>%
+  group_by(Id, logId) %>%
+  summarise(
+    TotalMinutesAsleep = sum(value == 1),
+  .groups = "drop"
+  )
+
+# Step 2: Compute per-user average
+sleep_summary <- session_sleep %>%
+  group_by(Id) %>%
+  summarise(
+    avg_minutes_asleep = mean(TotalMinutesAsleep, na.rm = TRUE),
+    recorded_sessions = n(),
+    avg_hours_asleep = avg_minutes_asleep / 60,
+    outlier = factor(avg_minutes_asleep < 200 | avg_minutes_asleep > 500, levels = c(FALSE, TRUE))
+  )
+
+# Step 3: Plot
+ggplot(sleep_summary, aes(x = reorder(as.factor(Id), -avg_hours_asleep),
+                          y = avg_hours_asleep, fill = outlier)) +
+  geom_col() +
+  geom_hline(yintercept = 8, linetype = "dashed", color = "darkgreen") +
+  coord_flip(clip = "off") +
+  geom_text(aes(label = paste0("n=", recorded_sessions)),
+            hjust = -0.1, size = 3) +
+  scale_fill_manual(values = c("FALSE" = "steelblue", "TRUE" = "red"),
+                    name = "Outlier") +
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.1)) +
+  labs(title = "Average Sleep Duration per User",
+       subtitle = "Dashed line = 8 hours",
+       x = "User ID",
+       y = "Avg Sleep Hours") +
+  labs(caption = "Each bar represents the average sleep duration across sessions (logId) for a user.") +
+  theme_minimal() +
+  theme(plot.margin = margin(5, 30, 5, 5))
+```
+   
+Users have varied number of sleep sessions. The average sleep duration per session typically falls between 4.5 and 7.5 hours, suggesting consistent and uninterrupted overnight wear. Red bars highlight users with unusually short or long average sleep durations, flagged as potential outliers due to inconsistent wear, atypical sleep behavior, or data anomalies.
+
+## User segmentation
+
+**8. User engagement**
+
+User-level engagement summaries were built by counting the number of active step days and sleep nights per user, which supported our later segmentation.
+
+```{r}
+# --- Step 1: Prepare Sleep Summary (1 log per night per user) ---
+sleep_summary <- minute_sleep %>%
+  group_by(Id, logId) %>%
+  summarise(sleep_start = min(datetime), .groups = "drop") %>%
+  mutate(sleep_date = as.Date(sleep_start)) %>%
+  group_by(Id, sleep_date) %>%
+  summarise(.groups = "drop") %>%
+  group_by(Id) %>%
+  summarise(nights_with_sleep_data = n(), .groups = "drop")
+
+# --- Step 2: Prepare Steps Summary ---
+step_summary <- hourly_steps %>%
+  group_by(Id, date) %>%                          # Aggregate steps per user per day
+  summarise(steps_per_day = sum(StepTotal), .groups = "drop") %>%
+  group_by(Id) %>%
+  summarise(days_with_steps_data = n(), .groups = "drop")    # Count days with steps
+
+# --- Step 3: Combine Summaries ---
+user_engagement <- full_join(sleep_summary, step_summary, by = "Id") %>%
+  replace_na(list(nights_with_sleep_data = 0, days_with_steps_data = 0))  # Fill NAs with 0
+
+# --- Step 4: View Result ---
+print(user_engagement)
+```
+
+**9. User segmentation**
+
+We selected 25 days as a meaningful threshold to reflect consistent usage during a typical 30-day month.
+
+```{r}
+# --- Add user segments ---
+user_engagement <- user_engagement %>%
+  mutate(
+    segment = case_when(
+      nights_with_sleep_data >= 25 & days_with_steps_data >= 25 ~ "Highly Engaged",
+      nights_with_sleep_data >= 25 & days_with_steps_data < 25  ~ "Sleep-Focused",
+      nights_with_sleep_data < 25  & days_with_steps_data >= 25 ~ "Steps-Focused",
+      TRUE                                                      ~ "Low Engagement"
+    )
+  )
+
+# --- Plot engagement scatterplot ---
+ggplot(user_engagement, aes(x = days_with_steps_data, y = nights_with_sleep_data, color = segment)) +
+  geom_point(size = 3) +
+  geom_vline(xintercept = 25, linetype = "dashed", color = "gray40") +
+  geom_hline(yintercept = 25, linetype = "dashed", color = "gray40") +
+  ggrepel::geom_text_repel(aes(label = Id),
+                           size = 2.5,
+                           max.overlaps = 50,
+                           segment.color = "gray60",
+                           segment.size = 0.2,
+                           box.padding = 0.3,
+                           point.padding = 0.2) +
+  annotate("text", x = 10, y = 35, label = "Sleep-Focused", color = "gray50", size = 3) +
+  annotate("text", x = 30, y = 5, label = "Steps-Focused", color = "gray50", size = 3) +
+  annotate("text", x = 30, y = 35, label = "Highly Engaged", color = "gray50", size = 3) +
+  annotate("text", x = 5, y = 5, label = "Low Engagement", color = "gray50", size = 3) +
+  scale_color_manual(values = c(
+    "Highly Engaged" = "red",
+    "Low Engagement" = "green",
+    "Steps-Focused" = "steelblue"
+  )) +
+  labs(
+    title = "Fitbit User Segmentation by Engagement in Sleep and Activity",
+    subtitle = "Dashed lines mark 25-day thresholds",
+    x = "Days with Steps Data",
+    y = "Nights with Sleep Data",
+    color = "Segment"
+  ) +
+  theme_minimal()
+```
+
+   
+**Interpretation of User Segmentation Chart**
+This scatter plot reveals three distinct user segments based on their engagement with sleep and activity tracking:
+
+  - Highly Engaged users (top-right) consistently log both sleep and steps data, indicating strong and balanced use of the Fitbit device.  This segment is ideal target for upselling premium features.
+
+  - Steps-Focused users (bottom-right) mainly engage with step tracking, potentially ignoring sleep features or wearing the device only during the day.  This segment might benefit from coaching or challenges.
+
+  - Low Engagement users (bottom-left) have minimal recorded activity in both categories, suggesting sporadic or trial use.  This segment has opportunity for re-engagement or education.
+  
+**10. Plot of user segmentation**
+
+```{r}
+ggplot(user_engagement, aes(x = segment, fill = segment)) +
+  geom_bar() +
+  geom_text(stat = "count", aes(label = after_stat(count)), vjust = -0.3, size = 4) +  # Add count labels
+  scale_fill_manual(values = c(
+    "Highly Engaged" = "red",
+    "Low Engagement" = "green",
+    "Steps-Focused" = "steelblue"
+  )) +
+  labs(
+    title = "User Count per Engagement Segment",
+    x = "Segment",
+    y = "User Count"
+  ) +
+  theme_minimal()
+```
+   
+These segments can guide tailored marketing, product feature emphasis, or user education strategies.
+
+
+## Share
+This phase will be done by presentation, but here we use R Markdown Notebook to share.
+
+### Main Insights 
+
+**🛌 Sleep Behavior**
+
+- Most users have 20–30 nights of sleep data, showing consistent overnight Fitbit use.
+- Average sleep duration falls between 6.5 to 8 hours per night for most users.
+- Outliers in average sleep duration may indicate inconsistent use, sleep disturbances, or device wear issues.
+- The sleep intensity curve follows expected physiological patterns: High intensity at the start (falling asleep), Stable mid-sleep phase, and Slight increase near the end (restlessness before waking).
+
+**🚶 Activity Patterns**
+
+- Peak activity occurs between 8 AM and 8 PM, suggesting devices were worn primarily during working hours.
+- Many users show routine activity patterns (e.g., morning/evening peaks), aligned with daily habits like commuting or workouts.
+- Some users display sparse or bursty activity, likely indicating limited or goal-driven Fitbit use (e.g., during exercise only).
+
+**🧩 User Segmentation**
+
+Users were grouped into three segments- Highly Engaged, Steps-Focused, and Low Engagement—based on the number of days with sleep and activity data.
+This segmentation highlights varying usage habits: some users fully utilize Fitbit's features, while others focus on specific functions or use it intermittently. Such differentiation can inform personalized engagement strategies or targeted feature development.
+
+### ✅ Conclusions
+
+- Fitbit usage is consistent and meaningful for most users, especially for sleep monitoring and daily activity tracking.
+- Data quality is high with patterns aligning well with known circadian and activity rhythms.
+- This analysis supports Fitbit’s effectiveness for behavioral research, especially in assessing sleep consistency, activity intensity, and daily engagement.
+- Importantly, user segmentation revealed diverse usage behaviors, highlighting the value of tailoring interventions or analyses based on engagement profiles.
+
+### Limitations
+
+- Small sample size (n = 34 users).
+- Data only reflects Fitbit wear time (not actual health outcomes).
+- Missing demographic data limits targeting precision.
+
+## Act
+
+### 📢 Strategic Marketing Recommendations
+
+🔹 User Segmentation for Targeted Messaging
+Leverage behavioral segmentation (e.g., consistent, partial, sporadic users) to tailor outreach. Promote advanced features to loyal users, and use nudges or tips to re-engage those with low or inconsistent usage.
+
+🔹 Promote Sleep Tracking Strength
+Position the smart device as more than a step counter by emphasizing reliable sleep tracking features—like Sleep Score and quality trends—to appeal to wellness-focused users.
+
+🔹 Encourage All-Day & Night Wear
+Use smart reminders (e.g., during morning routines or before bed) and suggest comfort-focused accessories to encourage round-the-clock wear.
+
+🔹 Leverage Routine Patterns
+Customize goals or prompts based on individual activity rhythms (e.g., targeting morning walkers with sunrise challenges or evening users with wind-down reminders).
+
+
